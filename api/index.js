@@ -1,12 +1,9 @@
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const cors = require('cors');
-const path = require('path');
-const fs = require('fs');
 require('dotenv').config(); 
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
 // --- 1. SUPABASE CONNECTION ---
 const supabase = createClient(
@@ -18,25 +15,7 @@ const supabase = createClient(
 app.use(cors());
 app.use(express.json());
 
-// Serve static files (HTML, CSS, JS) from the parent directory
-app.use(express.static(path.join(__dirname, '..')));
-app.use(express.static(path.join(__dirname, '../frontend')));
-
-// --- 2. SMART ROUTE TO FIND INDEX.HTML ---
-app.get('/', (req, res) => {
-    const rootPath = path.join(__dirname, '..', 'index.html');
-    const frontendPath = path.join(__dirname, '..', 'frontend', 'index.html');
-
-    if (fs.existsSync(rootPath)) {
-        res.sendFile(rootPath);
-    } else if (fs.existsSync(frontendPath)) {
-        res.sendFile(frontendPath);
-    } else {
-        res.status(404).send("<h1>404 Not Found</h1><p>Could not find index.html.</p>");
-    }
-});
-
-// --- 3. HELPERS (Static Data & Logic) ---
+// --- 2. HELPERS ---
 
 const subjects = {
     "BCA": ["Java Programming", "Data Structures", "DBMS", "Computer Networks", "Operating Systems"],
@@ -70,7 +49,7 @@ function generateTimetable(courseName) {
     return schedule;
 }
 
-// --- 4. DATABASE HELPERS (Supabase Queries) ---
+// --- 3. DATABASE HELPERS ---
 
 async function calculateAttendance(studentId) {
     const { data, error } = await supabase
@@ -79,7 +58,6 @@ async function calculateAttendance(studentId) {
         .eq('studentId', studentId);
 
     if (error) throw error;
-
     const rows = data || [];
     const totalClasses = rows.length;
     const presentCount = rows.filter(r => r.status === 'present').length;
@@ -91,14 +69,7 @@ async function calculateAttendance(studentId) {
     const monthlyPresent = monthlyRecords.filter(r => r.status === 'present').length;
     const monthlyPercentage = monthlyTotal === 0 ? 0 : ((monthlyPresent / monthlyTotal) * 100).toFixed(1);
 
-    return { 
-        semesterPercentage, 
-        total: totalClasses, 
-        present: presentCount, 
-        monthlyPercentage, 
-        monthlyTotal, 
-        monthlyPresent 
-    };
+    return { semesterPercentage, total: totalClasses, present: presentCount, monthlyPercentage, monthlyTotal, monthlyPresent };
 }
 
 async function calculateSubjectAttendance(studentId) {
@@ -108,7 +79,6 @@ async function calculateSubjectAttendance(studentId) {
         .eq('studentId', studentId);
 
     if (error) return [];
-
     const rows = data || [];
     let subjectStats = {};
     
@@ -122,22 +92,15 @@ async function calculateSubjectAttendance(studentId) {
     for (let sub in subjectStats) {
         let stats = subjectStats[sub];
         let percent = ((stats.present / stats.total) * 100).toFixed(1);
-        result.push({ 
-            subject: sub, 
-            present: stats.present, 
-            total: stats.total, 
-            percentage: percent, 
-            isShortage: percent < 75 
-        });
+        result.push({ subject: sub, present: stats.present, total: stats.total, percentage: percent, isShortage: percent < 75 });
     }
     return result;
 }
 
-// --- 5. API ROUTES ---
+// --- 4. API ROUTES ---
 
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
-    
     const { data: user, error } = await supabase
         .from('users')
         .select('*')
@@ -145,39 +108,27 @@ app.post('/api/login', async (req, res) => {
         .eq('password', password)
         .single();
 
-    if (error || !user) {
-        return res.status(401).json({ success: false, message: "Invalid Credentials" });
-    }
-
+    if (error || !user) return res.status(401).json({ success: false, message: "Invalid Credentials" });
     const { password: pwd, ...safeUser } = user;
     res.json({ success: true, user: safeUser });
 });
 
-app.get('/api/student/subjects/:course', (req, res) => {
-    res.json(subjects[req.params.course] || []);
-});
+app.get('/api/student/subjects/:course', (req, res) => res.json(subjects[req.params.course] || []));
 
-app.get('/api/student/timetable/:course', (req, res) => {
-    res.json(generateTimetable(req.params.course));
-});
+app.get('/api/student/timetable/:course', (req, res) => res.json(generateTimetable(req.params.course)));
 
 app.get('/api/student/attendance/:id', async (req, res) => {
     try {
         const overall = await calculateAttendance(req.params.id);
         const subjectWise = await calculateSubjectAttendance(req.params.id);
-        
         const { data: history, error } = await supabase
             .from('attendance')
             .select('*')
             .eq('studentId', req.params.id)
             .order('date', { ascending: false });
-
         if (error) return res.status(500).json({ error: error.message });
-        
         res.json({ overall, subjects: subjectWise, history: history || [] });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/teacher/today', (req, res) => {
@@ -185,13 +136,10 @@ app.post('/api/teacher/today', (req, res) => {
     const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     const today = dayNames[new Date().getDay()];
     let todayClasses = [];
-    
     Object.keys(subjects).forEach(course => {
         const schedule = generateTimetable(course);
         (schedule[today] || []).forEach(slot => {
-            if (subjectsAssigned.includes(slot.subject)) {
-                todayClasses.push({ ...slot, course });
-            }
+            if (subjectsAssigned.includes(slot.subject)) todayClasses.push({ ...slot, course });
         });
     });
     res.json({ day: today, classes: todayClasses });
@@ -204,20 +152,16 @@ app.get('/api/admin/students/:course', async (req, res) => {
         .eq('course', req.params.course)
         .eq('role', 'student')
         .order('id', { ascending: true });
-
     if (error) return res.status(500).json({ error: error.message });
-    
     const studentsWithStats = await Promise.all((students || []).map(async (s) => {
         const stats = await calculateAttendance(s.id);
         return { ...s, stats };
     }));
-    
     res.json(studentsWithStats);
 });
 
 app.post('/api/admin/attendance', async (req, res) => {
     const { date, subject, courseId, period, absentRollNumbers } = req.body;
-    
     const { data: students, error: studentError } = await supabase
         .from('users')
         .select('*')
@@ -226,39 +170,18 @@ app.post('/api/admin/attendance', async (req, res) => {
         .order('id', { ascending: true });
 
     if (studentError) return res.status(500).json({ error: studentError.message });
-
     const absentIndices = absentRollNumbers.map(r => parseInt(r.trim()));
-
-    const newRecords = students.map((student, index) => {
-        const isAbsent = absentIndices.includes(index + 1);
-        return {
-            studentId: student.id,
-            date: date,
-            subject: subject,
-            period: parseInt(period),
-            status: isAbsent ? 'absent' : 'present'
-        };
-    });
+    const newRecords = students.map((student, index) => ({
+        studentId: student.id, date: date, subject: subject, period: parseInt(period),
+        status: absentIndices.includes(index + 1) ? 'absent' : 'present'
+    }));
 
     try {
-        await supabase
-            .from('attendance')
-            .delete()
-            .eq('date', date)
-            .eq('subject', subject)
-            .eq('period', period);
-
-        const { error: insertError } = await supabase
-            .from('attendance')
-            .insert(newRecords);
-
+        await supabase.from('attendance').delete().eq('date', date).eq('subject', subject).eq('period', period);
+        const { error: insertError } = await supabase.from('attendance').insert(newRecords);
         if (insertError) throw insertError;
-
         res.json({ success: true, message: "Attendance Updated Successfully" });
-    } catch (err) {
-        console.error("Attendance Error:", err);
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/admin/shortage/:course', async (req, res) => {
@@ -267,27 +190,14 @@ app.get('/api/admin/shortage/:course', async (req, res) => {
         .select('*')
         .eq('course', req.params.course)
         .eq('role', 'student');
-
     if (error) return res.status(500).json({ error: error.message });
-    
     const shortageList = [];
     for (const s of (students || [])) {
         const stats = await calculateAttendance(s.id);
-        if (stats.total > 0 && stats.semesterPercentage < 75) {
-            shortageList.push({ ...s, stats });
-        }
+        if (stats.total > 0 && stats.semesterPercentage < 75) shortageList.push({ ...s, stats });
     }
     res.json(shortageList);
 });
 
-// --- 6. VERCEL SPECIFIC EXPORT ---
-// This line is REQUIRED for Vercel to work
+// --- 5. EXPORT ---
 module.exports = app;
-
-// This allows you to run 'node api/index.js' locally
-if (require.main === module) {
-    app.listen(PORT, () => {
-        console.log(`🚀 Local Server running on http://localhost:${PORT}`);
-        console.log(`🗄️  Connected to Supabase`);
-    });
-}
