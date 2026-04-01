@@ -1,7 +1,6 @@
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const cors = require('cors');
-const path = require('path');
 require('dotenv').config();
 
 const app = express();
@@ -28,7 +27,6 @@ function generateTimetable(courseName) {
     const subs = subjects[courseName] || [];
     const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     let schedule = {};
-    
     days.forEach((day, index) => {
         let isOddDay = ((index + 1) % 2 !== 0);
         if (isOddDay) {
@@ -160,17 +158,5 @@ app.get('/api/admin/shortage/:course', async (req, res) => {
 });
 
 // --- 5. EXPORT FOR VERCEL ---
+// This is the ONLY thing Vercel needs.
 module.exports = app;
-
-// --- 6. LOCAL HOSTING (Only runs when you do 'npm start') ---
-if (require.main === module) {
-    // Serve static files from root
-    app.use(express.static(path.join(__dirname, '..')));
-    app.get('/', (req, res) => {
-        res.sendFile(path.join(__dirname, '..', 'index.html'));
-    });
-
-    app.listen(process.env.PORT || 3000, () => {
-        console.log(`✅ Local Server running at http://localhost:${process.env.PORT || 3000}`);
-    });
-}
