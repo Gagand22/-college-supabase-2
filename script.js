@@ -6,19 +6,46 @@ async function handleLogin(e) {
     const originalText = btn.innerText;
     btn.innerText = "Signing in...";
     btn.disabled = true;
+    
     try {
         const res = await fetch('/api/login', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: document.getElementById('username').value, password: document.getElementById('password').value })
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                username: document.getElementById('username').value, 
+                password: document.getElementById('password').value 
+            })
         });
+
+        // CHECK 1: Did the server respond at all?
+        if (!res.ok) {
+            // Server returned an error (404, 500, etc). 
+            // Let's read the text to see what it is (might be HTML error page)
+            const errorText = await res.text();
+            console.error("Server Response:", errorText);
+            throw new Error(`Server Error (${res.status}): ${errorText}`);
+        }
+
+        // CHECK 2: Try to parse JSON
         const data = await res.json();
+        
         if (data.success) { 
             currentUser = data.user; 
             initApp(); 
+        } else { 
+            alert('Invalid credentials'); 
+            btn.innerText = originalText; 
+            btn.disabled = false; 
         }
-        else { alert('Invalid credentials'); btn.innerText = originalText; btn.disabled = false; }
-    } catch (err) { alert('Server error'); btn.innerText = originalText; btn.disabled = false; }
+    } catch (err) {
+        // This block runs if fetch failed or JSON parsing failed
+        console.error("Full Error:", err);
+        alert("DEBUG ERROR:\n" + err.message); 
+        btn.innerText = originalText; 
+        btn.disabled = false; 
+    }
 }
+    
 
 function initApp() {
     document.getElementById('login-screen').style.display = 'none';
